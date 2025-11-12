@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Система рекомендации круизов</title>
+    <style>
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Система рекомендации круизов</h1>
+        <p>Выберите понравившиеся и непонравившиеся круизы для получения персонализированных рекомендаций</p>
+    </div>
+
+    <div class="form-container">
+        <form method="POST" id="cruiseForm">
+            <div class="formula-selector">
+                <label for="formula">Метод сравнения:</label>
+                <select name="formula" id="formula">
+                    <option value="1">По сезонам (косинусное сходство)</option>
+                    <option value="2">По цене (манхэттенское расстояние)</option>
+                    <option value="3">По тегам (евклидово расстояние)</option>
+                    <option value="4">Комбинированный метод</option>
+                </select>
+            </div>
+
+            <div class="filters-container">
+                <div class="filter-group">
+                    <label for="duration_min">Продолжительность (минимальное кол-во ночей):</label>
+                    <input type="number" id="duration_min" name="duration_min" placeholder="От" min="0">
+                    <input type="number" id="duration_max" name="duration_max" placeholder="До" min="0">
+                </div>
+                
+                <div class="filter-group">
+                    <label for="price_min">Цена (евро):</label>
+                    <input type="number" id="price_min" name="price_min" placeholder="От" min="0">
+                    <input type="number" id="price_max" name="price_max" placeholder="До" min="0">
+                </div>
+                
+                <div class="filter-group">
+                    <label for="russian_groups">Наличие русских туристических групп:</label>
+                    <select id="russian_groups" name="russian_groups">
+                        <option value="any">Не важно</option>
+                        <option value="yes">Да</option>
+                        <option value="no">Нет</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="selection-container">
+                <div class="selection-box likes">
+                    <div class="selection-title">
+                        <span>Понравившиеся круизы</span>
+                    </div>
+                    <div class="selection-controls">
+                        <select name="cruise_to_add" id="likeSelect">
+                            <option value="">-- Выберите круиз --</option>
+                            {% for location in locations %}
+                            <option value="{{ location }}">{{ location }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="button" onclick="addToLikes()">Добавить</button>
+                    </div>
+                    <div class="selected-options" id="likeOptions">
+                        {% for location in like_locations or [] %}
+                        <div class="selected-option">
+                            {{ location }}
+                            <input type="hidden" name="like_locations" value="{{ location }}">
+                            <span class="remove-option" onclick="removeOption(this, 'likes')">×</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="selection-box dislikes">
+                    <div class="selection-title">
+                        <span>Непонравившиеся круизы</span>
+                    </div>
+                    <div class="selection-controls">
+                        <select name="cruise_to_add" id="dislikeSelect">
+                            <option value="">-- Выберите круиз --</option>
+                            {% for location in locations %}
+                            <option value="{{ location }}">{{ location }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="button" onclick="addToDislikes()">Добавить</button>
+                    </div>
+                    <div class="selected-options" id="dislikeOptions">
+                        {% for location in dislike_locations or [] %}
+                        <div class="selected-option">
+                            {{ location }}
+                            <input type="hidden" name="dislike_locations" value="{{ location }}">
+                            <span class="remove-option" onclick="removeOption(this, 'dislikes')">×</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <button type="submit" class="submit-btn">Получить рекомендации</button>
+        </form>
+    </div>
+
+    {% if error %}
+    <div class="error-message">
+        {{ error }}
+    </div>
+    {% endif %}
+
+    {% if recommendations %}
+    <div class="results-container">
+        <h2>Рекомендуемые круизы</h2>
+        <div class="recommendation-list">
+            {% for name, score in recommendations %}
+            <div class="recommendation-item">
+                <span class="cruise-name">{{ name }}</span>
+                <span class="score">(сходство: {{ "%.3f"|format(score) }})</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <script>
+        function addToLikes() {
+            const select = document.getElementById('likeSelect');
+            addCruise(select.value, 'like_locations', 'likeOptions');
+            select.value = '';
+        }
+
+        function addToDislikes() {
+            const select = document.getElementById('dislikeSelect');
+            addCruise(select.value, 'dislike_locations', 'dislikeOptions');
+            select.value = '';
+        }
+
+        function addCruise(value, inputName, containerId) {
+            if (!value) return;
+            
+            const container = document.getElementById(containerId);
+            const existing = container.querySelector(`input[value="${value}"]`);
+            
+            if (!existing) {
+                const div = document.createElement('div');
+                div.className = 'selected-option';
+                div.innerHTML = `
+                    ${value}
+                    <input type="hidden" name="${inputName}" value="${value}">
+                    <span class="remove-option" onclick="removeCruise(this)">×</span>
+                `;
+                container.appendChild(div);
+            }
+        }
+
+        function removeCruise(el) {
+            el.parentElement.remove();
+        }
+
+        // Сохраняем значения фильтров после отправки формы
+        document.addEventListener('DOMContentLoaded', function() {
+            // Получаем параметры из URL (если есть)
+            const urlParams = new URLSearchParams(window.location.search);
+            
+            // Восстанавливаем значения фильтров
+            const durationMin = urlParams.get('duration_min') || '';
+            const durationMax = urlParams.get('duration_max') || '';
+            const priceMin = urlParams.get('price_min') || '';
+            const priceMax = urlParams.get('price_max') || '';
+            const russianGroups = urlParams.get('russian_groups') || 'any';
+            const formula = urlParams.get('formula') || '1';
+            
+            document.getElementById('duration_min').value = durationMin;
+            document.getElementById('duration_max').value = durationMax;
+            document.getElementById('price_min').value = priceMin;
+            document.getElementById('price_max').value = priceMax;
+            document.getElementById('russian_groups').value = russianGroups;
+            document.getElementById('formula').value = formula;
+        });
+    </script>
+</body>
+</html>
